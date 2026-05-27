@@ -36,9 +36,11 @@ return [
         'token' => env('TWILIO_AUTH_TOKEN'),
         'whatsapp_from' => env('TWILIO_WHATSAPP_FROM'),
     ],
+
     'n8n' => [
-    'webhook_url' => env('N8N_WEBHOOK_URL'),
-],
+        'webhook_url' => env('N8N_WEBHOOK_URL'),
+        'verify_ssl' => env('N8N_VERIFY_SSL', true),
+    ],
 
 
 ];

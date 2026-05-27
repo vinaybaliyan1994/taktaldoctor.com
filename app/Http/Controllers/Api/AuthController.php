@@ -15,10 +15,27 @@ use App\Http\Controllers\Controller;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 
 class AuthController extends Controller
 {
+    private function normalizeIndianPhone(?string $phone): ?string
+    {
+        $digits = preg_replace('/\D+/', '', $phone ?? '');
+
+        if (strlen($digits) === 12 && str_starts_with($digits, '91')) {
+            $digits = substr($digits, 2);
+        }
+
+        if (strlen($digits) === 11 && str_starts_with($digits, '0')) {
+            $digits = substr($digits, 1);
+        }
+
+        return preg_match('/^[6-9]\d{9}$/', $digits) ? $digits : null;
+    }
+
     // public function register(Request $request)
     // {
 
@@ -52,21 +69,66 @@ class AuthController extends Controller
             'phone' => 'required|string|min:10',
         ]);
 
-        $phone = $request->phone;
+        $phone = $this->normalizeIndianPhone($request->phone);
+        if (!$phone) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Phone must be a valid 10-digit Indian mobile number.',
+            ], 422);
+        }
 
-        // Generate 4-digit OTP
-        $otp = rand(1000, 9999);
+        $webhookUrl = config('services.n8n.webhook_url');
 
-        // Store OTP in Cache for 5 minutes
-        // Key: otp_{phone_number}
+        if (!$webhookUrl) {
+            return response()->json([
+                'status' => false,
+                'message' => 'OTP service is not configured.',
+            ], 500);
+        }
+
+        // Generate 6-digit OTP.
+        $otp = rand(100000, 999999);
+
+        try {
+            $verifySsl = filter_var(config('services.n8n.verify_ssl'), FILTER_VALIDATE_BOOLEAN);
+
+            $response = Http::timeout(10)
+                ->withOptions(['verify' => $verifySsl])
+                ->post($webhookUrl, [
+                    'phone' => $phone,
+                    'otp' => $otp,
+                ]);
+
+            if (!$response->successful()) {
+                Log::warning('n8n OTP webhook failed', [
+                    'phone' => $phone,
+                    'status' => $response->status(),
+                    'response' => $response->body(),
+                ]);
+
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Unable to send OTP. Please try again.',
+                ], 502);
+            }
+        } catch (\Throwable $e) {
+            Log::error('n8n OTP webhook error', [
+                'phone' => $phone,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'status' => false,
+                'message' => 'Unable to send OTP. Please try again.',
+            ], 502);
+        }
+
+        // Store OTP in Cache for 5 minutes after it is sent successfully.
         Cache::put("otp_{$phone}", $otp, now()->addMinutes(5));
 
-        // TODO: Integrate SMS Gateway here (Twilio, Vonage, etc.)
-        // For now, we return the OTP in the response for testing purposes
         return response()->json([
             'status' => true,
             'message' => 'OTP sent successfully',
-            'otp' => $otp // Remove this in production
         ], 200);
     }
 
@@ -80,7 +142,14 @@ class AuthController extends Controller
             'otp' => 'required|integer',
         ]);
 
-        $phone = $request->phone;
+        $phone = $this->normalizeIndianPhone($request->phone);
+        if (!$phone) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Phone must be a valid 10-digit Indian mobile number.',
+            ], 422);
+        }
+
         $inputOtp = $request->otp;
 
         // Check OTP from Cache
@@ -108,8 +177,18 @@ class AuthController extends Controller
      */
     public function doctorRegister(Request $request)
     {
+        $phone = $this->normalizeIndianPhone($request->phone);
+        if (!$phone) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Phone must be a valid 10-digit Indian mobile number.',
+            ], 422);
+        }
+
+        $request->merge(['phone' => $phone]);
+
         // --- SECURITY CHECK: Ensure Phone was verified via OTP in the last 5 mins ---
-        $isVerified = Cache::get("verified_{$request->phone}");
+        $isVerified = Cache::get("verified_{$phone}");
         if (!$isVerified) {
             return response()->json([
                 'status' => false,

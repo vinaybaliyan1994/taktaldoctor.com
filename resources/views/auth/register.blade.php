@@ -374,11 +374,11 @@
                             <i class="mdi mdi-cellphone-message" style="font-size: 30px; color: var(--secondary);"></i>
                         </div>
                         <h3 style="font-size: 18px; color: var(--text-dark);">Verify Mobile</h3>
-                        <p style="font-size: 13px; color: var(--text-light);">Enter the 4-digit code sent to <span id="display-phone" style="font-weight: bold;"></span></p>
+                        <p style="font-size: 13px; color: var(--text-light);">Enter the 6-digit code sent to <span id="display-phone" style="font-weight: bold;"></span></p>
                     </div>
 
                     <div class="form-group">
-                        <input type="text" id="otpInput" class="form-control" style="letter-spacing: 5px; font-size: 20px; text-align: center;" placeholder="0000" maxlength="4">
+                        <input type="text" id="otpInput" class="form-control" style="letter-spacing: 5px; font-size: 20px; text-align: center;" placeholder="000000" maxlength="6">
                         <div class="error-msg" id="otp-error">Invalid OTP</div>
                     </div>
 
@@ -509,9 +509,7 @@
                 const data = await response.json();
 
                 if (data.status) {
-                    // Show OTP for testing purposes (remove in production)
-                    const displayOtp = data.otp ? ` (Dev: ${data.otp})` : '';
-                    showToast(`OTP Sent successfully${displayOtp}`, 'success');
+                    showToast(data.message || 'OTP sent successfully', 'success');
                     goToStep(2);
                     document.getElementById('otpInput').focus();
                 } else {
